@@ -151,7 +151,7 @@ server {
 | 腾讯云 | 云函数 SCF |
 | AWS | Lambda |
 
-> ⚠️ **注意：** 不支持 Cloudflare Workers，因为 Workers 不支持原生 Node.js `http` 模块。
+> ⚠️ **注意：** 不支持 Cloudflare Workers，因为 Workers 不支持原生 Node.js `http` 模块，而且CPU时间严格限制，根本无法完成回调
 
 **部署步骤：**
 
