@@ -384,39 +384,6 @@ router.get('/merchants/stats', requireProviderRamPermission('merchant'), async (
   }
 });
 
-// 废弃接口
-router.post('/merchants/audit', requireProviderRamPermission('merchant'), async (req, res) => {
-  res.json({ code: -1, msg: '该接口已废弃：请使用 开通/暂停/恢复' });
-});
-
-router.post('/merchants/kick', requireProviderRamPermission('merchant'), async (req, res) => {
-  res.json({ code: -1, msg: '不支持删除/踢出商户：请使用暂停' });
-});
-
-router.post('/join-code/regenerate', async (req, res) => {
-  res.json({ code: -1, msg: '加入码模式已废弃' });
-});
-
-router.get('/join-code', async (req, res) => {
-  res.json({ code: -1, msg: '加入码模式已废弃' });
-});
-
-router.get('/merchants/pending', requireProviderRamPermission('merchant'), async (req, res) => {
-  res.json({ code: 0, data: { list: [], count: 0 } });
-});
-
-router.get('/merchants/left', requireProviderRamPermission('merchant'), async (req, res) => {
-  res.json({ code: 0, data: { list: [] } });
-});
-
-router.post('/merchants/approve', requireProviderRamPermission('merchant'), async (req, res) => {
-  res.json({ code: -1, msg: '该接口已废弃：请使用开通' });
-});
-
-router.post('/merchants/reject', requireProviderRamPermission('merchant'), async (req, res) => {
-  res.json({ code: -1, msg: '该接口已废弃' });
-});
-
 // 更新商户信息（需要 merchant 权限）
 // 注意：修改费率和支付组需要额外的 channel 权限
 router.post('/merchants/update', requireProviderRamPermission('merchant'), async (req, res) => {
