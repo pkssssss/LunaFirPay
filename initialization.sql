@@ -455,5 +455,4 @@ EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
 -- 修改 merchants.status 枚举添加 paused（直接执行，MySQL 会自动保留现有值）
-ALTER TABLE `merchants` MODIFY COLUMN `status` enum('pending','active','paused','disabled','banned') DEFAULT 'pending';
-
+ALTER TABLE `merchants` MODIFY COLUMN `status` enum('pending','active','paused','disabled','banned') NOT NULL DEFAULT 'pending';
