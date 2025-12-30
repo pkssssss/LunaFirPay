@@ -498,6 +498,69 @@
 
     .crypto-tips ul {
       font-size: 12px;
+    }
+
+    /* 支付宝H5唤起APP样式 */
+    .alipay-h5-wrapper {
+      background: linear-gradient(135deg, #1677ff 0%, #0958d9 100%);
+      border-radius: 10px;
+      padding: 24px 20px;
+      text-align: center;
+    }
+
+    .alipay-h5-logo {
+      margin-bottom: 16px;
+    }
+
+    .alipay-h5-logo img {
+      width: 48px;
+      height: 48px;
+      vertical-align: middle;
+    }
+
+    .alipay-h5-logo span {
+      color: #fff;
+      font-size: 20px;
+      font-weight: 500;
+      margin-left: 10px;
+      vertical-align: middle;
+    }
+
+    .alipay-h5-amount {
+      font-size: 36px;
+      color: #fff;
+      font-weight: 600;
+      margin-bottom: 20px;
+    }
+
+    .alipay-h5-btn {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      background: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 500;
+      color: #1677ff;
+      cursor: pointer;
+      text-decoration: none;
+      text-align: center;
+      margin-bottom: 10px;
+      transition: all 0.3s;
+    }
+
+    .alipay-h5-btn:hover {
+      background: #f0f5ff;
+    }
+
+    .alipay-h5-btn-secondary {
+      background: rgba(255,255,255,0.2);
+      color: #fff;
+    }
+
+    .alipay-h5-btn-secondary:hover {
+      background: rgba(255,255,255,0.3);
       color: #78350f;
       padding-left: 16px;
       margin: 0;
@@ -738,6 +801,17 @@
             </div>
           </div>
           
+          <!-- 支付宝H5唤起APP -->
+          <div class="alipay-h5-wrapper" id="alipayH5Wrapper" style="display:none;">
+            <div class="alipay-h5-logo">
+              <img src="/assets/img/alipay.png" alt="支付宝" onerror="this.style.display='none'">
+              <span>支付宝支付</span>
+            </div>
+            <div class="alipay-h5-amount" id="alipayH5Amount">¥0.00</div>
+            <a href="javascript:;" id="alipayH5OpenBtn" class="alipay-h5-btn">跳转到支付宝支付</a>
+            <a href="javascript:checkAlipayH5Result()" class="alipay-h5-btn alipay-h5-btn-secondary">检测支付状态</a>
+          </div>
+          
           <!-- 加密货币支付信息 -->
           <div class="crypto-wrapper" id="cryptoWrapper" style="display:none;">
             <div class="crypto-header">
@@ -841,6 +915,54 @@
       var expireTimestamp = null;  // 过期时间戳
       var returnUrl = '<%= order.return_url || "" %>';
       var currentCryptoTradeNo = null;  // 当前加密货币订单号
+      var alipayH5Wrapper = document.getElementById('alipayH5Wrapper');
+      var alipayH5SchemeUrl = null;  // 支付宝H5协议URL
+
+      // 显示支付宝H5唤起APP面板
+      function showAlipayH5(schemeUrl, money) {
+        normalQrcodeWrapper.style.display = 'none';
+        cryptoWrapper.style.display = 'none';
+        alipayH5Wrapper.style.display = 'block';
+        
+        alipayH5SchemeUrl = schemeUrl;
+        document.getElementById('alipayH5Amount').textContent = '¥' + parseFloat(money).toFixed(2);
+        document.getElementById('alipayH5OpenBtn').href = schemeUrl;
+        
+        if (payMethodSection) payMethodSection.style.display = 'none';
+        if (secureNotice) secureNotice.style.display = 'none';
+        if (payBtn) payBtn.style.display = 'none';
+        qrcodePanel.style.display = 'block';
+        qrcodeStatus.className = 'qrcode-status waiting';
+        qrcodeStatus.innerHTML = '<span class="status-spinner"></span><span>等待支付中...</span>';
+        
+        // 自动跳转（非Edge浏览器）
+        if (!schemeUrl.startsWith('http://') && !schemeUrl.startsWith('https://') && navigator.userAgent.indexOf('EdgA/') === -1) {
+          window.location.href = schemeUrl;
+        }
+        
+        // 开始轮询检测
+        startPolling();
+      }
+      
+      // 检测支付宝H5支付结果
+      window.checkAlipayH5Result = function() {
+        fetch('/api/pay/check_status?trade_no=' + tradeNo)
+          .then(function(response) { return response.json(); })
+          .then(function(data) {
+            if (data.code === 0 && data.status === 1) {
+              qrcodeStatus.className = 'qrcode-status success';
+              qrcodeStatus.innerHTML = '<span>支付成功，正在跳转中...</span>';
+              setTimeout(function() {
+                window.location.href = returnUrl || '/api/pay/success?trade_no=' + tradeNo;
+              }, 1000);
+            } else {
+              alert('您还未完成付款，请继续付款');
+            }
+          })
+          .catch(function() {
+            alert('服务器错误');
+          });
+      };
 
       // 显示普通支付二维码
       function showQrcode(qrcodeUrl, payTypeName, expireTime, isLocked) {
@@ -1055,6 +1177,12 @@
               } else if (data.type === 'crypto' && data.crypto) {
                 // 加密货币支付 - 在当前页面显示二维码
                 showCryptoQrcode(data.crypto);
+              } else if (data.scheme) {
+                // APP跳转协议（如支付宝/微信APP唤起）
+                window.location.href = data.scheme;
+              } else if (data.alipay_h5) {
+                // 支付宝H5唤起APP - 在当前页面显示
+                showAlipayH5(data.alipay_h5.code_url, data.alipay_h5.money || '<%= order.money %>');
               } else if (data.pay_url) {
                 // 普通支付 - 跳转到支付页面
                 window.location.href = data.pay_url;

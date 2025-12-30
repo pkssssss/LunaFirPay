@@ -678,7 +678,9 @@ async function notify(channelConfig, notifyData, order) {
             return { success: false };
         }
         
-        if (parseFloat(notifyData.total_amount) !== parseFloat(order.real_money)) {
+        // 验证金额 - 使用四舍五入比较，兼容 real_money 和 realmoney
+        const orderMoney = order.real_money || order.realmoney;
+        if (Math.round(parseFloat(notifyData.total_amount) * 100) !== Math.round(parseFloat(orderMoney) * 100)) {
             return { success: false };
         }
         
@@ -686,7 +688,7 @@ async function notify(channelConfig, notifyData, order) {
             return {
                 success: true,
                 api_trade_no: notifyData.trade_no,
-                buyer: notifyData.buyer_id || notifyData.buyer_open_id
+                buyer: notifyData.buyer_id || notifyData.buyer_open_id || ''
             };
         }
         

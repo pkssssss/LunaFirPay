@@ -104,6 +104,9 @@ app.use('/api/admin/pay', payGroupRoutes);
 app.use('/api/telegram', telegramService.router);
 app.use('/api/verification', verificationRoutes);
 
+// 兼容PHP路由 /pay/* 转发到 /api/pay/*
+app.use('/pay', payRoutes);
+
 // 兼容易支付路由（根目录）- 重写URL后转发
 app.all('/submit.php', (req, res, next) => {
   req.url = '/submit.php';

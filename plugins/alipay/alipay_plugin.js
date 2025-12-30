@@ -379,10 +379,11 @@ async function wapPay(channelConfig, orderInfo) {
 }
 
 /**
- * 当面付（扫码支付）
+ * 当面付（扫码支付）- 内部调用
  */
-async function qrPay(channelConfig, orderInfo) {
-  const { trade_no, money, name, notify_url } = orderInfo;
+async function qrPayInternal(channelConfig, orderInfo) {
+  const { trade_no, money, name, notify_url, clientip } = orderInfo;
+  const apptype = channelConfig.apptype || [];
   
   const config = {
     ...channelConfig,
@@ -399,6 +400,15 @@ async function qrPay(channelConfig, orderInfo) {
     bizContent.seller_id = channelConfig.appmchid;
   }
   
+  // 如果配置了离线二维码模式
+  if (!apptype.includes('3') && apptype.includes('8')) {
+    bizContent.product_code = 'QR_CODE_OFFLINE';
+  }
+  
+  if (clientip) {
+    bizContent.business_params = { mc_create_trade_ip: clientip };
+  }
+  
   const params = buildRequestParams(config, 'alipay.trade.precreate', bizContent, channelConfig);
   const response = await sendRequest(params);
   
@@ -407,10 +417,109 @@ async function qrPay(channelConfig, orderInfo) {
     throw new Error(result.sub_msg || result.msg || '获取支付二维码失败');
   }
   
-  return {
-    type: 'qrcode',
-    qr_code: result.qr_code
+  return result.qr_code;
+}
+
+/**
+ * 扫码支付（qrcode方法）
+ * 根据apptype配置选择不同的支付方式
+ */
+async function qrcode(channelConfig, orderInfo, conf) {
+  const { trade_no } = orderInfo;
+  const apptype = channelConfig.apptype || [];
+  const siteurl = conf?.siteurl || '';
+  const localurl_alipay = conf?.localurl_alipay || '';
+  const is_alipay = orderInfo.is_alipay || orderInfo.mdevice === 'alipay';
+  
+  let code_url;
+  
+  // 根据apptype判断使用哪种支付方式
+  if (!apptype.includes('3') && apptype.includes('2')) {
+    // 没有当面付但有手机网站支付
+    code_url = `${siteurl}pay/submitwap/${trade_no}/`;
+    if (localurl_alipay && !localurl_alipay.includes(conf?.http_host || '')) {
+      code_url = `${localurl_alipay}pay/submitwap/${trade_no}/`;
+    }
+  } else if (!apptype.includes('3') && apptype.includes('4')) {
+    // 没有当面付但有JS支付
+    code_url = `${siteurl}pay/jspay/${trade_no}/`;
+    if (localurl_alipay && !localurl_alipay.includes(conf?.http_host || '')) {
+      code_url = `${localurl_alipay}pay/jspay/${trade_no}/`;
+    }
+  } else if (!apptype.includes('3') && apptype.includes('6')) {
+    // 没有当面付但有APP支付
+    code_url = `${siteurl}pay/apppay/${trade_no}/`;
+    if (localurl_alipay && !localurl_alipay.includes(conf?.http_host || '')) {
+      code_url = `${localurl_alipay}pay/apppay/${trade_no}/`;
+    }
+  } else if (!apptype.includes('3') && apptype.includes('7')) {
+    // 没有当面付但有小程序支付
+    code_url = `${siteurl}pay/minipay/${trade_no}/`;
+  } else if (!apptype.includes('3') && apptype.includes('5')) {
+    // 没有当面付但有预授权
+    code_url = `${siteurl}pay/preauth/${trade_no}/`;
+    if (localurl_alipay && !localurl_alipay.includes(conf?.http_host || '')) {
+      code_url = `${localurl_alipay}pay/preauth/${trade_no}/`;
+    }
+  } else {
+    // 当面付扫码
+    try {
+      code_url = await qrPayInternal(channelConfig, orderInfo);
+    } catch (error) {
+      return { type: 'error', msg: '支付宝下单失败！' + error.message };
+    }
+  }
+  
+  // 支付宝内打开直接跳转
+  if (is_alipay) {
+    return { type: 'jump', url: code_url };
+  } else {
+    return { type: 'qrcode', page: 'alipay_qrcode', url: code_url };
+  }
+}
+
+/**
+ * 当面付（扫码支付）- 直接调用接口返回二维码
+ */
+async function qrPay(channelConfig, orderInfo) {
+  const { trade_no, money, name, notify_url, clientip } = orderInfo;
+  const is_alipay = orderInfo.is_alipay || orderInfo.mdevice === 'alipay';
+  
+  const config = {
+    ...channelConfig,
+    notify_url
   };
+  
+  const bizContent = {
+    out_trade_no: trade_no,
+    total_amount: money.toFixed(2),
+    subject: name
+  };
+  
+  if (channelConfig.appmchid) {
+    bizContent.seller_id = channelConfig.appmchid;
+  }
+  
+  if (clientip) {
+    bizContent.business_params = { mc_create_trade_ip: clientip };
+  }
+  
+  const params = buildRequestParams(config, 'alipay.trade.precreate', bizContent, channelConfig);
+  const response = await sendRequest(params);
+  
+  const result = response.alipay_trade_precreate_response;
+  if (result.code !== '10000') {
+    throw new Error(result.sub_msg || result.msg || '获取支付二维码失败');
+  }
+  
+  const code_url = result.qr_code;
+  
+  // 支付宝内打开直接跳转
+  if (is_alipay) {
+    return { type: 'jump', url: code_url };
+  } else {
+    return { type: 'qrcode', page: 'alipay_qrcode', url: code_url };
+  }
 }
 
 /**
@@ -422,10 +531,12 @@ async function notify(channelConfig, notifyData, order) {
     const sign = notifyData.sign;
     const signType = notifyData.sign_type || 'RSA2';
     
-    delete notifyData.sign;
-    delete notifyData.sign_type;
+    // 复制数据避免修改原始对象
+    const params = { ...notifyData };
+    delete params.sign;
+    delete params.sign_type;
     
-    const signString = buildSignString(notifyData);
+    const signString = buildSignString(params);
     
     // 检查是否使用证书模式
     let publicKey = channelConfig.appkey;
@@ -451,12 +562,14 @@ async function notify(channelConfig, notifyData, order) {
       return { success: false };
     }
     
-    // 验证订单
+    // 验证订单号
     if (notifyData.out_trade_no !== order.trade_no) {
       return { success: false };
     }
     
-    if (parseFloat(notifyData.total_amount) !== parseFloat(order.real_money)) {
+    // 验证金额 - 使用四舍五入比较，兼容 real_money 和 realmoney
+    const orderMoney = order.real_money || order.realmoney;
+    if (Math.round(parseFloat(notifyData.total_amount) * 100) !== Math.round(parseFloat(orderMoney) * 100)) {
       return { success: false };
     }
     
@@ -464,7 +577,7 @@ async function notify(channelConfig, notifyData, order) {
       return {
         success: true,
         api_trade_no: notifyData.trade_no,
-        buyer: notifyData.buyer_id || notifyData.buyer_open_id
+        buyer: notifyData.buyer_id || notifyData.buyer_open_id || ''
       };
     }
     
@@ -1130,11 +1243,13 @@ async function returnCallback(channelConfig, getData, order) {
     
     // 验证订单信息
     if (getData.out_trade_no !== order.trade_no) {
-      return { success: false, msg: '订单号不匹配' };
+      return { success: false, msg: '订单信息校验失败' };
     }
     
-    if (Math.abs(parseFloat(getData.total_amount) - parseFloat(order.real_money)) > 0.01) {
-      return { success: false, msg: '订单金额不匹配' };
+    // 验证金额 - 使用四舍五入比较，兼容 real_money 和 realmoney
+    const orderMoney = order.real_money || order.realmoney;
+    if (Math.round(parseFloat(getData.total_amount) * 100) !== Math.round(parseFloat(orderMoney) * 100)) {
+      return { success: false, msg: '订单信息校验失败' };
     }
     
     return {
@@ -1698,7 +1813,7 @@ module.exports = {
     qrcodepc,
     submitpc: pagePay,
     submitwap: wapPay,
-    qrcode: qrPay,
+    qrcode,
     apppay: appPay,
     preauth: preAuth,
     jspay: jsPay,

@@ -1723,6 +1723,33 @@ router.post('/dopay', async (req, res) => {
       return res.json({ code: 0, msg: 'success', scheme: result.url });
     }
 
+    if (result.type === 'page') {
+      // 渲染页面类型 - 根据页面类型返回不同数据
+      if (result.page === 'alipay_h5') {
+        // 支付宝H5唤起APP - 返回数据让前端在页面内显示
+        return res.json({ 
+          code: 0, 
+          msg: 'success', 
+          alipay_h5: {
+            code_url: result.data.code_url,
+            redirect_url: result.data.redirect_url,
+            money: orderInfo.money
+          }
+        });
+      }
+      // 其他页面类型 - 跳转到渲染路由
+      return res.json({ 
+        code: 0, 
+        msg: 'success', 
+        pay_url: `/pay/render/${orderInfo.trade_no}/${result.page}` 
+      });
+    }
+
+    if (result.type === 'app') {
+      // APP SDK调用字符串 - 返回给APP使用
+      return res.json({ code: 0, msg: 'success', app_data: result.data });
+    }
+
     // 默认返回跳转URL
     return res.json({ code: 0, msg: 'success', pay_url: result.url || result.pay_url });
 
@@ -1733,6 +1760,94 @@ router.post('/dopay', async (req, res) => {
       await checkAndAutoCloseChannel(error.message, channelConfig);
     }
     res.json({ code: 1, msg: error.message || '系统错误' });
+  }
+});
+
+// 渲染支付页面（用于APP支付、预授权等需要特定页面的支付方式）
+router.get('/render/:trade_no/:page', async (req, res) => {
+  try {
+    const { trade_no, page } = req.params;
+
+    // 查询订单
+    const [orders] = await db.query(
+      'SELECT * FROM orders WHERE trade_no = ?',
+      [trade_no]
+    );
+
+    if (orders.length === 0) {
+      return res.render('error', { message: '订单不存在' });
+    }
+
+    const order = orders[0];
+
+    // 获取通道配置
+    if (!order.channel_id) {
+      return res.render('error', { message: '订单无支付通道' });
+    }
+
+    const [channels] = await db.query(
+      'SELECT * FROM provider_channels WHERE id = ?',
+      [order.channel_id]
+    );
+
+    if (channels.length === 0) {
+      return res.render('error', { message: '支付通道不存在' });
+    }
+
+    const channel = channels[0];
+    const pluginName = channel.plugin_name || order.plugin_name;
+
+    // 获取插件配置
+    let pluginConfig = {};
+    try {
+      const channelConfig = typeof channel.config === 'string' 
+        ? JSON.parse(channel.config) 
+        : (channel.config || {});
+      pluginConfig = channelConfig.params || {};
+    } catch (e) {
+      console.error('解析通道配置失败:', e);
+    }
+
+    // 重新调用插件获取页面数据
+    const plugin = pluginLoader.getPlugin(pluginName);
+    if (!plugin) {
+      return res.render('error', { message: '支付插件不存在' });
+    }
+
+    // 构造订单信息
+    const orderInfo = {
+      trade_no: order.trade_no,
+      money: parseFloat(order.real_money || order.money),
+      name: order.name || '订单支付',
+      notify_url: `${req.protocol}://${req.get('host')}/api/pay/notify/${trade_no}`,
+      return_url: `${req.protocol}://${req.get('host')}/api/pay/return/${trade_no}`,
+      clientip: req.ip || req.connection.remoteAddress
+    };
+
+    // 根据页面类型渲染
+    if (page === 'alipay_h5') {
+      // 支付宝H5唤起APP页面
+      // 重新调用插件获取SDK数据
+      const payType = order.pay_type || 'apppay';
+      if (typeof plugin[payType] === 'function') {
+        const result = await plugin[payType](pluginConfig, orderInfo);
+        if (result.type === 'page' && result.data) {
+          return res.render('alipay_h5', {
+            code_url: result.data.code_url,
+            redirect_url: result.data.redirect_url,
+            order,
+            trade_no
+          });
+        }
+      }
+    }
+
+    // 默认渲染错误页
+    return res.render('error', { message: '不支持的页面类型' });
+
+  } catch (error) {
+    console.error('Render Page Error:', error);
+    res.render('error', { message: error.message || '系统错误' });
   }
 });
 
@@ -2599,7 +2714,13 @@ router.all('/:func/:trade_no', async (req, res) => {
     const { func, trade_no } = req.params;
     
     // 验证函数名，只允许特定的支付方法
-    const allowedFuncs = ['jspay', 'h5', 'qrcode', 'wap', 'apppay', 'submit', 'ok'];
+    const allowedFuncs = [
+      'jspay', 'h5', 'qrcode', 'qrcodepc', 'wap', 'apppay', 'submit', 'ok',
+      'alipay', 'alipayjs', 'alipayh5', 'alipaywap',
+      'wxpay', 'wxjspay', 'wxwappay', 'wxh5pay',
+      'qqpay', 'qqwap',
+      'bank', 'unionpay'
+    ];
     if (!allowedFuncs.includes(func)) {
       return res.status(404).send('Not Found');
     }
