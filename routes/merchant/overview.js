@@ -99,13 +99,14 @@ router.get('/overview', async (req, res) => {
           const pt = allPayTypes.find(p => p.id === parseInt(payTypeId));
           if (pt && typeConfig.rate !== undefined && typeConfig.rate !== null) {
             // 费率优先级：商户通道独立费率 > 商户统一费率 > 支付组费率
+            // 统一格式：数据库存储百分比值（如6表示6%），返回时转换为小数（0.06）
             let finalRate;
             if (merchantFeeRates && merchantFeeRates[pt.name] !== undefined) {
-              finalRate = merchantFeeRates[pt.name];
+              finalRate = merchantFeeRates[pt.name] / 100; // 百分比转小数
             } else if (merchant.fee_rate !== null && merchant.fee_rate !== undefined) {
-              finalRate = merchant.fee_rate;
+              finalRate = merchant.fee_rate / 100; // 百分比转小数
             } else {
-              finalRate = typeConfig.rate / 100;
+              finalRate = typeConfig.rate / 100; // 百分比转小数
             }
             rates.push({
               pay_type: pt.name,

@@ -250,9 +250,10 @@ async function getChannels() {
 /**
  * 获取商户费率
  * 优先级：商户通道独立费率 > 商户统一费率 > 支付组费率
+ * 统一格式：数据库存储百分比值（如 6 = 6%），返回小数（如 0.06）
  * @param {Object} merchant - 商户信息（需包含 merchant_fee_rate, merchant_fee_rates, pay_group_id）
  * @param {string} payType - 支付类型名称（如 'alipay', 'wxpay'）
- * @returns {Promise<number>} 费率（小数形式，如 0.006 表示 0.6%）
+ * @returns {Promise<number>} 费率（小数形式，如 0.06 表示 6%）
  */
 async function getMerchantFeeRate(merchant, payType) {
   // 1. 如果商户有该通道的独立费率，优先使用
@@ -262,13 +263,15 @@ async function getMerchantFeeRate(merchant, payType) {
       try { feeRates = JSON.parse(feeRates); } catch (e) { feeRates = null; }
     }
     if (feeRates && feeRates[payType] !== undefined && feeRates[payType] !== null) {
-      return parseFloat(feeRates[payType]);
+      // 费率以百分比存储，需要 /100 转为小数
+      return parseFloat(feeRates[payType]) / 100;
     }
   }
 
   // 2. 如果商户有统一费率，使用统一费率
   if (merchant.merchant_fee_rate !== null && merchant.merchant_fee_rate !== undefined) {
-    return parseFloat(merchant.merchant_fee_rate);
+    // 费率以百分比存储，需要 /100 转为小数
+    return parseFloat(merchant.merchant_fee_rate) / 100;
   }
   
   // 3. 从支付组获取费率（单服务商模式，不按 provider_id 过滤）
