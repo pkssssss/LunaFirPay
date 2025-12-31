@@ -1156,6 +1156,15 @@ router.get('/cashier', async (req, res) => {
 
     const order = orders[0];
 
+    // 记录访客 IP（仅当 ip 列为空时更新）
+    if (!order.ip) {
+      const visitorIp = getClientIP(req);
+      if (visitorIp) {
+        await db.query('UPDATE orders SET ip = ? WHERE trade_no = ?', [visitorIp, trade_no]);
+        order.ip = visitorIp;
+      }
+    }
+
     // 状态: 0=待支付 1=已支付 2=已关闭
     if (order.status !== 0) {
       if (order.status === 1) {

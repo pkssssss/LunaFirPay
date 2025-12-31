@@ -10,6 +10,16 @@ const normalizeIp = (ip) => {
   return ip;
 };
 
+const sanitizeIp = (ip) => {
+  if (!ip || typeof ip !== 'string') return null;
+  const trimmed = ip.trim();
+  if (trimmed.length > 45) return null;
+  if (/[<>"'&;\[\]{}()\\]/.test(trimmed)) return null;
+  const normalized = normalizeIp(trimmed);
+  if (isValidIpv4(normalized) || isValidIpv6(normalized)) return normalized;
+  return null;
+};
+
 const IP_HEADERS = [
   'cf-connecting-ip',
   'true-client-ip',
@@ -29,24 +39,24 @@ const getClientIp = (req) => {
   for (const header of IP_HEADERS) {
     const value = getHeader(headers, header);
     if (value) {
-      const normalized = normalizeIp(value.trim());
-      if (isValidIp(normalized)) return normalized;
+      const ip = sanitizeIp(value);
+      if (ip) return ip;
     }
   }
 
   const xff = getHeader(headers, 'x-forwarded-for');
   if (xff) {
-    const firstIp = xff.split(',')[0];
-    if (firstIp) {
-      const normalized = normalizeIp(firstIp.trim());
-      if (isValidIp(normalized)) return normalized;
+    const ips = xff.split(',');
+    for (const rawIp of ips) {
+      const ip = sanitizeIp(rawIp);
+      if (ip) return ip;
     }
   }
 
   const remoteIp = req.connection?.remoteAddress || req.socket?.remoteAddress;
   if (remoteIp) {
-    const normalized = normalizeIp(remoteIp);
-    if (isValidIp(normalized)) return normalized;
+    const ip = sanitizeIp(remoteIp);
+    if (ip) return ip;
   }
 
   return null;

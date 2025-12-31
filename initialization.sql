@@ -171,7 +171,8 @@ CREATE TABLE IF NOT EXISTS `orders` (
   `notify_url` varchar(500) DEFAULT NULL COMMENT '异步通知地址',
   `return_url` varchar(500) DEFAULT NULL COMMENT '同步回调地址',
   `param` varchar(255) DEFAULT NULL COMMENT '商户自定义参数',
-  `client_ip` varchar(50) DEFAULT NULL COMMENT '客户端IP',
+  `client_ip` varchar(50) DEFAULT NULL COMMENT '客户端IP（API提交）',
+  `ip` varchar(45) DEFAULT NULL COMMENT '访客IP（收银台访问）',
   `api_trade_no` varchar(64) DEFAULT NULL,
   `buyer` varchar(64) DEFAULT NULL,
   `status` tinyint(1) DEFAULT '0' COMMENT '状态：0未支付 1已支付 2已关闭 3退款中 4已退款',
@@ -464,5 +465,17 @@ SET @sql = (SELECT IF(
   'SELECT 1'
 ));
 PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 为 orders 表添加 ip 列（如果不存在）
+SET @tablename = 'orders';
+SET @columnname = 'ip';
+SET @preparedStatement = (SELECT IF(
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = @tablename AND COLUMN_NAME = @columnname) = 0,
+  CONCAT('ALTER TABLE `', @tablename, '` ADD COLUMN `', @columnname, '` varchar(45) DEFAULT NULL COMMENT ''访客IP'' AFTER `client_ip`'),
+  'SELECT 1'
+));
+PREPARE stmt FROM @preparedStatement;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
